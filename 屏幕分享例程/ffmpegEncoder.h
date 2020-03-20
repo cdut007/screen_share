@@ -7,7 +7,6 @@ class IEncoder
 {
 protected:
 	AVCodec *pCodec;
-	AVCodecContext *pCodecCtx;
 	FILE* fp_out;
 	AVPacket pkt;
 	char filename[256];
@@ -18,7 +17,9 @@ protected:
 
 public:
 	bool encode(AVFrame* frame); 
+	bool encodeRTMP(AVFrame* frame, AVStream* vs, AVFormatContext *ic);
 	bool flush(AVFrame* frame);
+	AVCodecContext *pCodecCtx;
 };
 
 class x264Encoder: public IEncoder

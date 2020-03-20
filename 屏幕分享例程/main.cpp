@@ -107,6 +107,8 @@ int blt_cap_screen(struct cap_screen_t* sc)
 }
 #include "web_stream.h"
 
+
+
 int main(int argc, char* argv[])
 {
 	struct cap_screen_t sc;
@@ -131,6 +133,82 @@ int main(int argc, char* argv[])
 	WSAStartup(0x0202, &d);
 	web->start("0.0.0.0", 8000); // 8000端口侦听
 	time(&start);
+
+
+	//推流
+	//nginx-rtmp 直播服务器rtmp推流URL
+	char *outUrl = "rtmp://127.0.0.1:1935/live/room";
+
+	//注册所有的编解码器
+	avcodec_register_all();
+
+	//注册所有的封装器
+	av_register_all();
+
+	//注册所有网络协议
+	avformat_network_init();
+
+	//rtmp flv 封装器
+	AVFormatContext *ic = NULL;
+
+	AVStream *vs = NULL;
+
+	try
+	{
+
+		int ret = 0;
+
+
+
+		///5 输出封装器和视频流配置
+		//a 创建输出封装器上下文
+		ret = avformat_alloc_output_context2(&ic, 0, "flv", outUrl);
+		if (ret != 0)
+		{
+			char buf[1024] = { 0 };
+			av_strerror(ret, buf, sizeof(buf) - 1);
+			throw exception(buf);
+		}
+		//b 添加视频流   视音频流对应的结构体，用于视音频编解码。
+		vs = avformat_new_stream(ic, NULL);
+		if (!vs)
+		{
+			throw exception("avformat_new_stream failed");
+		}
+		//附加标志，这个一定要设置
+		vs->codec->codec_tag = 0;
+		//从编码器复制参数
+		avcodec_copy_context(vs->codec, ffmpeg264.pCodecCtx);
+		av_dump_format(ic, 0, outUrl, 1);
+
+
+		///打开rtmp 的网络输出IO  AVIOContext：输入输出对应的结构体，用于输入输出（读写文件，RTMP协议等）。
+		ret = avio_open(&ic->pb, outUrl, AVIO_FLAG_WRITE);
+		if (ret != 0)
+		{
+			char buf[1024] = { 0 };
+			av_strerror(ret, buf, sizeof(buf) - 1);
+			throw exception(buf);
+		}
+
+		//写入封装头
+		ret = avformat_write_header(ic, NULL);
+		if (ret != 0)
+		{
+			char buf[1024] = { 0 };
+			av_strerror(ret, buf, sizeof(buf) - 1);
+			throw exception(buf);
+		}
+
+
+
+	}
+	catch (exception &ex)
+	{
+
+		cerr << ex.what() << endl;
+	}
+
 	for (int i = 0; ; i++)
 	{
 		blt_cap_screen(&sc);
@@ -150,14 +228,17 @@ int main(int argc, char* argv[])
 		{
 			printf("Encoder error!!\n"); Sleep(1000); continue;
 		}
-
+		ffmpeg264.encodeRTMP(frame,vs,ic);
 		// 一下是3种编码方式，任选一种均可
-		ffmpeg264.encode(frame);
+		//ffmpeg264.encode(frame);
+		//frame->dat
 		// ffmpegmpeg1.encode(frame); 
 		// libx264.encode(frame);
 
 		// SDL播放器播放视频，取消注释即可播放
 		// SDLMaster::updateScreen(frame); 
+
+		
 
 		free(buf);
 	}

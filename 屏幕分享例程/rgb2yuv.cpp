@@ -45,5 +45,6 @@ AVFrame * YUVencoder::encode(unsigned char * rgb32, int rgb32_len, int width, in
 	sws_freeContext(sws_ctx);
 	static int npts = 0;
 	avframe->pts = npts ++ ;
+	
 	return avframe;
 }

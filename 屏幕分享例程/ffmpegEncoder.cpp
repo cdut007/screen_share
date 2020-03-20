@@ -26,6 +26,52 @@ bool IEncoder::encode(AVFrame * frame)
 	return true;
 }
 
+bool IEncoder::encodeRTMP(AVFrame * frame, AVStream* vs, AVFormatContext *ic)
+{
+
+
+	av_init_packet(&pkt);
+
+	pkt.data = NULL;
+	pkt.size = 0;
+	int ret = avcodec_encode_video2(pCodecCtx, &pkt, frame, &got_output);
+	if (ret < 0) {
+		printf("Error encoding frame\n");
+		return false;
+	}
+
+	//printf("AVPacket Bef --%d %d %d %d\n", pkt.size , pkt.pts , pkt.dts , pkt.duration);
+		//推流
+
+	//pkt.flags |= AV_PKT_FLAG_KEY;
+	//pkt.stream_index = vs->index;
+	if (pkt.pts != AV_NOPTS_VALUE) {
+
+		//pkt.pts = av_rescale_q(pkt.pts, pCodecCtx->time_base, vs->time_base);
+		pkt.pts = av_rescale_q_rnd(pkt.pts, pCodecCtx->time_base, vs->time_base, (AVRounding)(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
+
+	}
+	
+	if (pkt.dts != AV_NOPTS_VALUE) {
+		//pkt.dts = av_rescale_q(pkt.dts, pCodecCtx->time_base, vs->time_base);
+		pkt.dts = av_rescale_q_rnd(pkt.dts, pCodecCtx->time_base, vs->time_base, (AVRounding)(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
+	}
+
+	if (pkt.duration > 0) {
+		pkt.duration = av_rescale_q(pkt.duration, pCodecCtx->time_base, vs->time_base);
+	}
+	//pkt.pos = -1;
+	ret = av_interleaved_write_frame(ic, &pkt);
+	//av_packet_unref(&pkt);
+	av_free_packet(&pkt);
+	if (ret < 0) {
+		printf("Error wirte frame %d %d \n",ret);
+		return false;
+	}
+	printf("encode a frame................\n");
+	return true;
+}
+
 bool IEncoder::flush(AVFrame * frame)
 {
 	//Flush Encoder
@@ -71,6 +117,7 @@ void x264Encoder::init()
 	av_opt_set(pCodecCtx->priv_data, "tune", "zerolatency", 0);
 	av_opt_set(pCodecCtx->priv_data, "preset", "slow", 0);
 	av_dict_set(&opts, "profile", "baseline", 0);
+	//av_dict_set(&opts, "flvflags", "add_keyframe_index", 0);
 	if (avcodec_open2(pCodecCtx, pCodec, &opts) < 0) {
 		printf("Could not open codec\n");
 		return;
@@ -88,11 +135,15 @@ void x264Encoder::init_header()
 	static unsigned char pps_buffer[4] = {
 		0x68,
 		0xCE,0xF,0xC8, };
-	int extradata_len = 8 + sizeof(sps_buffer) + sizeof(pps_buffer) + 2 + 1;
-	pCodecCtx->extradata_size = extradata_len;
-	pCodecCtx->extradata = (BYTE*)av_mallocz(extradata_len);
-	BYTE* body = (BYTE*)pCodecCtx->extradata;
+	//Extdata (sps and pps data for the first frame of H264) must be added, otherwise FLV with AVCDecoderConfiguration Record information cannot be generated.
+	unsigned char sps_pps[26] = { 0x00, 0x00, 0x01, 0x67, 0x4d, 0x00, 0x1f, 0x9d, 0xa8, 0x14, 0x01, 0x6e, 0x9b, 0x80, 0x80, 0x80, 0x81, 0x00, 0x00, 0x00, 0x01, 0x68, 0xee, 0x3c, 0x80 };
 
+	int extradata_len = sizeof(sps_pps);// 8 + sizeof(sps_buffer) + sizeof(pps_buffer) + 2 + 1;
+	pCodecCtx->extradata_size = extradata_len;
+	pCodecCtx->extradata = (BYTE*)av_malloc(extradata_len+ FF_INPUT_BUFFER_PADDING_SIZE);
+	BYTE* body = (BYTE*)pCodecCtx->extradata;
+	memcpy(body, sps_pps, extradata_len);
+  /*
 	//H264 AVCC 格式的extradata头，用来存储 SPS，PPS
 	int i = 0;
 	body[i++] = 0x01;
@@ -113,7 +164,7 @@ void x264Encoder::init_header()
 	body[i++] = (sizeof(pps_buffer) >> 8) & 0xff;
 	body[i++] = (sizeof(pps_buffer)) & 0xff;
 	memcpy(&body[i], pps_buffer, sizeof(pps_buffer));
-
+	*/
 	if (pCodecCtx->flags & AVFMT_GLOBALHEADER)
 	{
 		pCodecCtx->flags |= CODEC_FLAG_GLOBAL_HEADER;
@@ -128,6 +179,7 @@ x264Encoder::x264Encoder(int width2, int height2, const char * filename2)
 	width = width2;
 	height = height2;
 	init();
+	init_header();
 }
 
 x264Encoder::~x264Encoder()

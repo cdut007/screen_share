@@ -18,7 +18,7 @@ web_stream::web_stream()
 	::InitializeCriticalSection(&cs);
 	listenfd = -1;
 	quit = false;
-	jpeg_quality = 80;
+	jpeg_quality = 100;// 80;
 }
 
 web_stream::~web_stream()
